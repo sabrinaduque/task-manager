@@ -5,6 +5,7 @@ import { useState } from "react";
 import { httpBatchLink } from "@trpc/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { ToastProvider } from "@/components/Toast";
 import { trpc } from "@/utils/trpc";
 
 export function Providers({
@@ -13,7 +14,13 @@ export function Providers({
   children: React.ReactNode;
 }) {
   const [queryClient] = useState(
-    () => new QueryClient()
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          // Os dados chegam pré-carregados via SSR; evita refazer a mesma busca logo após a hidratação.
+          queries: { staleTime: 30 * 1000 },
+        },
+      })
   );
 
   const [trpcClient] = useState(() =>
@@ -32,7 +39,7 @@ export function Providers({
       queryClient={queryClient}
     >
       <QueryClientProvider client={queryClient}>
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </QueryClientProvider>
     </trpc.Provider>
   );
