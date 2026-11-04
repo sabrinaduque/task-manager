@@ -1,107 +1,40 @@
-import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
-import { router, publicProcedure } from "../trpc";
-import { tasks, createTask } from "../db";
+import { publicProcedure, router } from "../trpc";
+import { createTask, deleteTask, getTask, listTasks, updateTask } from "../db";
+import {
+  taskCreateSchema,
+  taskIdSchema,
+  taskListSchema,
+  taskUpdateSchema,
+} from "@/shared/task-schema";
+
+function notFound(id: string): never {
+  throw new TRPCError({
+    code: "NOT_FOUND",
+    message: `Tarefa "${id}" não encontrada. Ela pode já ter sido excluída.`,
+  });
+}
 
 export const taskRouter = router({
+  // READ: lista paginada por cursor (usada pelo SSR e pelo infinite scroll)
+  list: publicProcedure.input(taskListSchema).query(({ input }) => listTasks(input)),
 
-  // READ: Listar tarefas
-  getAll: publicProcedure.query(() => {
-    return tasks;
-  }),
-
-  // READ: Buscar tarefa por ID
+  // READ: busca uma tarefa por id (usada pela página de edição)
   getById: publicProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-      })
-    )
-    .query(({ input }) => {
-      const task = tasks.find(
-        (item) => item.id === input.id
-      );
+    .input(taskIdSchema)
+    .query(({ input }) => getTask(input.id) ?? notFound(input.id)),
 
-      if (!task) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Task not found.",
-        });
-      }
+  // CREATE: o schema rejeita títulos vazios ou só com espaços (erro BAD_REQUEST)
+  create: publicProcedure.input(taskCreateSchema).mutation(({ input }) => createTask(input)),
 
-      return task;
-    }),
-
-  // CREATE: Criar tarefa
-  create: publicProcedure
-    .input(
-      z.object({
-        titulo: z.string().trim().min(1, "Title is required."),
-        descricao: z.string().optional(),
-      })
-    )
-    .mutation(({ input }) => {
-      return createTask(input);
-    }),
-
-  // UPDATE: Atualizar tarefa
+  // UPDATE: substitui título e descrição; NOT_FOUND se a tarefa não existir
   update: publicProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        titulo: z.string().trim().min(1).optional(),
-        descricao: z.string().optional(),
-      })
-    )
-    .mutation(({ input }) => {
-      const task = tasks.find(
-        (item) => item.id === input.id
-      );
+    .input(taskUpdateSchema)
+    .mutation(({ input: { id, ...data } }) => updateTask(id, data) ?? notFound(id)),
 
-      if (!task) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Task not found.",
-        });
-      }
-
-      if (input.titulo !== undefined) {
-        task.titulo = input.titulo;
-      }
-
-      if (input.descricao !== undefined) {
-        task.descricao = input.descricao;
-      }
-
-      return task;
-    }),
-
-  // DELETE: Excluir tarefa
+  // DELETE: NOT_FOUND se a tarefa não existir (ex.: excluída em outra aba)
   delete: publicProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-      })
-    )
-    .mutation(({ input }) => {
-      const index = tasks.findIndex(
-        (item) => item.id === input.id
-      );
-
-      if (index === -1) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Task not found.",
-        });
-      }
-
-      tasks.splice(index, 1);
-
-      return {
-        success: true,
-        message: "Task deleted successfully.",
-      };
-    }),
-
+    .input(taskIdSchema)
+    .mutation(({ input }) => deleteTask(input.id) ?? notFound(input.id)),
 });
